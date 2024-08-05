@@ -1,0 +1,191 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+#                                                                        
+# 
+
+# # Black Coffer Assignment (Data Science)
+# ## Article Crawler and Text Analysis 
+# ### &nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;By Surakshith D.T 
+
+# In[1]:
+
+
+pip install pandas requests beautifulsoup4 
+
+
+# In[2]:
+
+
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+
+# Loading the Excel file containing url ids and links
+df = pd.read_excel('input.xlsx') #to be changed according to the file location
+#since i am using jupyter notebook , i have the file locally available(same folder) hence complete path not needed
+
+def extract_article_text(url):
+    # Send a GET request to the URL
+    response = requests.get(url)
+    if response.status_code == 200:
+        # Parse the HTML content 
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Extract the article title 
+        title = soup.find('title').get_text()
+
+        # Extract the article text 
+        article_body = soup.find('body') 
+        if article_body:
+            paragraphs = article_body.find_all('p')
+            article_text = '\n'.join([para.get_text() for para in paragraphs])
+
+            return title + '\n\n' + article_text
+    return None
+
+# Iterate through the DataFrame
+for index, row in df.iterrows():
+    url_id = row['URL_ID']
+    url = row['URL']
+
+    # Extract the article text
+    article_text = extract_article_text(url)
+    
+    if article_text:
+        # Save the article text to a text file with the URL_ID as the filename
+        with open(f'{url_id}.txt', 'w', encoding='utf-8') as file:
+            file.write(article_text)
+
+print("Articles have been extracted and saved.")
+
+
+# In[3]:
+
+
+pip install pandas nltk textstat openpyxl
+
+
+# In[4]:
+
+
+import os
+import pandas as pd
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize, sent_tokenize
+import textstat
+import re
+
+# Download NLTK data files
+nltk.download('punkt')
+nltk.download('stopwords') # i have downloaded it locally, path should be adjusted according to file storage path
+
+# Load the Excel file
+df = pd.read_excel('Output Data Structure.xlsx') # path should be adjusted according to file storage path
+
+# Load stop words, positive words, and negative words
+stop_words = set(stopwords.words('english'))
+stop_words_dir = 'StopWords'
+stop_words_files = [f for f in os.listdir(stop_words_dir) if f.endswith('.txt')]
+
+for file in stop_words_files:
+    with open(os.path.join(stop_words_dir, file), 'r') as f:
+        stop_words.update(f.read().split())
+
+positive_words = set()
+negative_words = set()
+
+with open('positive-words.txt', 'r') as f:
+    positive_words.update(f.read().split())
+
+with open('negative-words.txt', 'r') as f:
+    negative_words.update(f.read().split())
+
+# Function to clean text
+def clean_text(text):
+    tokens = word_tokenize(text)
+    tokens = [word.lower() for word in tokens if word.isalnum() and word.lower() not in stop_words]
+    return tokens
+
+# Function to calculate sentiment scores
+def calculate_sentiment(tokens):
+    positive_score = sum(1 for word in tokens if word in positive_words)
+    negative_score = sum(1 for word in tokens if word in negative_words)
+    polarity_score = (positive_score - negative_score) / ((positive_score + negative_score) + 0.000001)
+    subjectivity_score = (positive_score + negative_score) / (len(tokens) + 0.000001)
+    return positive_score, negative_score, polarity_score, subjectivity_score
+
+# Function to count complex words (more than two syllables)
+def count_complex_words(text):
+    words = text.split()
+    complex_words = 0
+    for word in words:
+        syllable_count = textstat.syllable_count(word)
+        if syllable_count > 2:
+            complex_words += 1
+    return complex_words
+
+# Function to calculate readability and other metrics
+def calculate_metrics(text):
+    sentences = sent_tokenize(text)
+    words = word_tokenize(text)
+    cleaned_words = [word.lower() for word in words if word.isalnum() and word.lower() not in stop_words]
+    word_count = len(cleaned_words)
+    sentence_count = len(sentences)
+    avg_sentence_length = word_count / sentence_count if sentence_count > 0 else 0
+    complex_words = count_complex_words(' '.join(cleaned_words))
+    syllable_count = sum(textstat.syllable_count(word) for word in cleaned_words)
+    syllable_count_per_word = syllable_count / word_count if word_count > 0 else 0
+    percentage_complex_words = complex_words / word_count if word_count > 0 else 0
+    avg_word_length = sum(len(word) for word in cleaned_words) / word_count if word_count > 0 else 0
+    fog_index = 0.4 * (avg_sentence_length + percentage_complex_words)
+    personal_pronouns = len(re.findall(r'\b(I|we|my|ours|us)\b', text, re.I))
+    
+    return (avg_sentence_length, complex_words, word_count, syllable_count_per_word,
+            fog_index, personal_pronouns, avg_word_length, percentage_complex_words, sentence_count)
+
+# Process each text file and fill the DataFrame
+for index, row in df.iterrows():
+    url_id = row['URL_ID']
+    text_file = f'{url_id}.txt'
+    
+    if os.path.exists(text_file):
+        with open(text_file, 'r', encoding='utf-8') as file:
+            text = file.read()
+        
+        # Clean the text and calculate sentiment scores
+        tokens = clean_text(text)
+        positive_score, negative_score, polarity_score, subjectivity_score = calculate_sentiment(tokens)
+        
+        # Calculate readability and other metrics
+        (avg_sentence_length, complex_words, word_count, syllable_count_per_word,
+         fog_index, personal_pronouns, avg_word_length, percentage_complex_words, sentence_count) = calculate_metrics(text)
+        
+        # Fill the DataFrame with calculated values
+        df.at[index, 'POSITIVE SCORE'] = positive_score
+        df.at[index, 'NEGATIVE SCORE'] = negative_score
+        df.at[index, 'POLARITY SCORE'] = polarity_score
+        df.at[index, 'SUBJECTIVITY SCORE'] = subjectivity_score
+        df.at[index, 'AVG SENTENCE LENGTH'] = avg_sentence_length
+        df.at[index, 'COMPLEX WORDS'] = complex_words
+        df.at[index, 'WORD COUNT'] = word_count
+        df.at[index, 'SYLLABLE COUNT PER WORD'] = syllable_count_per_word
+        df.at[index, 'FOG INDEX'] = fog_index
+        df.at[index, 'PERSONAL PRONOUNS'] = personal_pronouns
+        df.at[index, 'AVG WORD LENGTH'] = avg_word_length
+        df.at[index, 'PERCENTAGE OF COMPLEX WORDS'] = percentage_complex_words
+        df.at[index, 'AVG NUMBER OF WORDS PER SENTENCE'] = avg_sentence_length
+        df.at[index, 'COMPLEX WORD COUNT'] = complex_words
+        df.at[index, 'SYLLABLE PER WORD'] = syllable_count_per_word
+
+# Save the updated DataFrame back to the Excel file
+df.to_excel('Output Data Structure.xlsx', index=False)
+print("Text analysis complete and results saved to Excel file.")
+
+
+# In[ ]:
+
+
+
+
